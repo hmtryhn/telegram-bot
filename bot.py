@@ -129,7 +129,6 @@ async def receive_non_text(message: Message):
 
 async def on_startup(bot: Bot):
     if not BOT_TOKEN or ADMIN_CHAT_ID == 0 or not BASE_URL:
-        # Render loglarında görünsün diye
         print("❌ Missing env vars. Please set BOT_TOKEN, ADMIN_CHAT_ID, BASE_URL")
         return
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
@@ -143,8 +142,8 @@ async def on_shutdown(bot: Bot):
 def main():
     bot = Bot(token=BOT_TOKEN)
 
-    dp.startup.register(lambda: on_startup(bot))
-    dp.shutdown.register(lambda: on_shutdown(bot))
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
     app = web.Application()
 
@@ -162,3 +161,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
