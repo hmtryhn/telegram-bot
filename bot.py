@@ -1,6 +1,8 @@
 import os
-import asyncio
 import re
+import asyncio
+from aiohttp import web
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, CallbackQuery,
@@ -8,9 +10,25 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-BOT_TOKEN = os.getenv("8264886297:AAEs4iAZ2toT6j2-rohAmsxg0RosEeVnUT0", "")
-ADMIN_CHAT_ID = int(os.getenv("451706092", "0"))
+
+# ========= ENV (Render'da gireceğiz) =========
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+
+# Render servis URL'in (ör: https://senin-servisin.onrender.com)
+BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
+
+# Güvenlik için webhook yolu (rastgele bir şey yap)
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_123")
+WEBHOOK_PATH = f"/webhook/{WEBHOOK_SECRET}"
+WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}"
+
+PORT = int(os.getenv("PORT", "10000"))  # Render bunu otomatik verir
+
+
+# ========= METİNLER (RU) =========
 CHANNEL_URL = "https://t.me/bloome_woman"
 
 TEXT_1 = (
@@ -50,6 +68,7 @@ def normalize_tg(value: str) -> str:
     if v.lower().startswith("t.me/"):
         v = "https://" + v
     return v
+
 
 dp = Dispatcher()
 
@@ -107,15 +126,39 @@ async def receive_contact(message: Message, state: FSMContext):
 async def receive_non_text(message: Message):
     await message.answer("Пожалуйста, отправьте ссылку или @username текстом 🙂")
 
-# ADMIN CHAT ID bulmak için mini komut (3. aşamada kullanacağız)
-@dp.message(F.text == "/id")
-async def myid(message: Message):
-    await message.answer(f"Your ID: {message.from_user.id}\nChat ID: {message.chat.id}")
 
-async def main():
+async def on_startup(bot: Bot):
+    if not BOT_TOKEN or ADMIN_CHAT_ID == 0 or not BASE_URL:
+        # Render loglarında görünsün diye
+        print("❌ Missing env vars. Please set BOT_TOKEN, ADMIN_CHAT_ID, BASE_URL")
+        return
+    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    print(f"✅ Webhook set to: {WEBHOOK_URL}")
+
+async def on_shutdown(bot: Bot):
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("🛑 Webhook deleted")
+
+
+def main():
     bot = Bot(token=BOT_TOKEN)
-    await dp.start_polling(bot)
+
+    dp.startup.register(lambda: on_startup(bot))
+    dp.shutdown.register(lambda: on_shutdown(bot))
+
+    app = web.Application()
+
+    # Webhook handler
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+
+    # Health check (Render bazen hoşlanır)
+    async def health(_):
+        return web.Response(text="OK")
+    app.router.add_get("/", health)
+
+    setup_application(app, dp, bot=bot)
+    web.run_app(app, host="0.0.0.0", port=PORT)
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    main()
