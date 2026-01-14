@@ -46,7 +46,7 @@ OPTIONS = [
     ("Консультация", "opt_consult"),
     ("40 дней сопровождения", "opt_40days"),
     ("Сопровождение беременности", "opt_pregnancy"),
-    ("Индивидуальный занятия для женщин", "opt_individual"),
+    ("Индивидуальные занятия для женщин", "opt_individual"),
 ]
 
 def options_kb() -> InlineKeyboardMarkup:
@@ -161,4 +161,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
