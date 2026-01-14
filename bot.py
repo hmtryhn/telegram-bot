@@ -1,3 +1,4 @@
+import os
 import asyncio
 import re
 from aiogram import Bot, Dispatcher, F
@@ -8,8 +9,8 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-BOT_TOKEN = "8264886297:AAEs4iAZ2toT6j2-rohAmsxg0RosEeVnUT0"
-ADMIN_CHAT_ID = 451706092
+BOT_TOKEN = os.getenv("8264886297:AAEs4iAZ2toT6j2-rohAmsxg0RosEeVnUT0", "")
+ADMIN_CHAT_ID = int(os.getenv("451706092", "0"))
 CHANNEL_URL = "https://t.me/bloome_woman"
 
 TEXT_1 = (
@@ -117,3 +118,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
