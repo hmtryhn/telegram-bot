@@ -74,6 +74,7 @@ def normalize_tg(value: str) -> str:
     return v
     
 async def send_to_sheets(payload: dict):
+    print("📤 send_to_sheets called. URL=", SHEETS_WEBAPP_URL)
     if not SHEETS_WEBAPP_URL:
         print("ℹ️ SHEETS_WEBAPP_URL not set; skipping Sheets logging.")
         return
@@ -192,6 +193,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
