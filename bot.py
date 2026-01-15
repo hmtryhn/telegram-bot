@@ -1,9 +1,9 @@
 import os
 import re
 import asyncio
+
 from aiohttp import web
 import aiohttp
-
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -15,24 +15,21 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 
-# ========= ENV (Render'da gireceğiz) =========
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# ========= ENV (Render) =========
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
-# Render servis URL'in (ör: https://senin-servisin.onrender.com)
-BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
+BASE_URL = os.getenv("BASE_URL", "").strip().rstrip("/")
 SHEETS_WEBAPP_URL = os.getenv("SHEETS_WEBAPP_URL", "").strip()
 
-
-# Güvenlik için webhook yolu (rastgele bir şey yap)
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_123")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_123").strip()
 WEBHOOK_PATH = f"/webhook/{WEBHOOK_SECRET}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}"
 
-PORT = int(os.getenv("PORT", "10000"))  # Render bunu otomatik verir
+PORT = int(os.getenv("PORT", "10000"))
 
 
-# ========= METİNLER (RU) =========
+# ========= TEXTS (RU) =========
 CHANNEL_URL = "https://t.me/bloome_woman"
 
 TEXT_1 = (
@@ -53,6 +50,7 @@ OPTIONS = [
     ("Индивидуальные занятия для женщин", "opt_individual"),
 ]
 
+
 def options_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -61,61 +59,81 @@ def options_kb() -> InlineKeyboardMarkup:
         ]
     )
 
+
 class Form(StatesGroup):
     choosing = State()
     waiting_contact = State()
 
-TG_RE = re.compile(r"^(@[\w\d_]{3,}|https?://t\.me/[\w\d_]{3,}|t\.me/[\w\d_]{3,})$", re.IGNORECASE)
+
+TG_RE = re.compile(
+    r"^(@[\w\d_]{3,}|https?://t\.me/[\w\d_]{3,}|t\.me/[\w\d_]{3,})$",
+    re.IGNORECASE
+)
+
 
 def normalize_tg(value: str) -> str:
     v = value.strip()
     if v.lower().startswith("t.me/"):
         v = "https://" + v
     return v
-    
-async def send_to_sheets(payload: dict):
-    print("📤 send_to_sheets called. URL=", SHEETS_WEBAPP_URL)
+
+
+async def send_to_sheets(payload: dict) -> None:
+    """
+    Sends a row payload to Google Apps Script Web App which appends row into Sheet.
+    This runs best as a background task (create_task) so user gets instant response.
+    """
     if not SHEETS_WEBAPP_URL:
-        print("ℹ️ SHEETS_WEBAPP_URL not set; skipping Sheets logging.")
+        # Keep silent (or log once if you want)
         return
 
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(SHEETS_WEBAPP_URL, json=payload) as resp:
-                text = await resp.text()
-                # Debug için:
+            async with session.post(
+                SHEETS_WEBAPP_URL,
+                json=payload,
+                allow_redirects=True
+            ) as resp:
+                # Optional: log only if error
                 if resp.status != 200:
-                    print("❌ Sheets HTTP", resp.status, text)
-                else:
-                    print("✅ Sheets ok:", text[:200])
+                    text = await resp.text()
+                    print("❌ Sheets HTTP", resp.status, text[:300])
     except Exception as e:
         print("❌ Sheets error:", e)
 
 
 dp = Dispatcher()
 
+
 @dp.message(F.text.startswith("/start"))
 async def start(message: Message, state: FSMContext):
     parts = message.text.split(maxsplit=1)
     start_param = parts[1] if len(parts) > 1 else ""
+
     await state.clear()
     await state.update_data(start_param=start_param)
+
     await message.answer(TEXT_1, reply_markup=options_kb())
     await state.set_state(Form.choosing)
+
 
 @dp.callback_query(Form.choosing)
 async def choose_option(call: CallbackQuery, state: FSMContext):
     title_map = {data: title for title, data in OPTIONS}
     selected_title = title_map.get(call.data, call.data)
+
     await state.update_data(selected=selected_title)
+
     await call.message.answer(TEXT_2)
     await call.answer()
     await state.set_state(Form.waiting_contact)
 
+
 @dp.message(Form.waiting_contact, F.text)
 async def receive_contact(message: Message, state: FSMContext):
     tg = normalize_tg(message.text)
+
     if not TG_RE.match(tg):
         await message.answer(
             "Пожалуйста, отправьте ваш Telegram в одном из форматов:\n"
@@ -141,22 +159,23 @@ async def receive_contact(message: Message, state: FSMContext):
     if start_param:
         admin_text += f"🏷 start param: {start_param}\n"
 
-    print("✅ receive_contact reached. Going to send admin + sheets")
-
-    await message.bot.send_message(ADMIN_CHAT_ID, admin_text)
     payload = {
-    "user_id": u.id,
-    "full_name": u.full_name,
-    "username": f"@{u.username}" if u.username else "",
-    "format": selected_title,
-    "tg_contact": tg,
-    "start_param": start_param
-}
-    print("➡️ Calling send_to_sheets now...")
-    
-    await send_to_sheets(payload)
+        "user_id": u.id,
+        "full_name": u.full_name,
+        "username": f"@{u.username}" if u.username else "",
+        "format": selected_title,
+        "tg_contact": tg,
+        "start_param": start_param,
+    }
+
+    # ✅ User gets instant response (less perceived delay)
     await message.answer(TEXT_3)
     await state.clear()
+
+    # ✅ Send admin + sheets in background (non-blocking)
+    asyncio.create_task(message.bot.send_message(ADMIN_CHAT_ID, admin_text))
+    asyncio.create_task(send_to_sheets(payload))
+
 
 @dp.message(Form.waiting_contact)
 async def receive_non_text(message: Message):
@@ -167,8 +186,10 @@ async def on_startup(bot: Bot):
     if not BOT_TOKEN or ADMIN_CHAT_ID == 0 or not BASE_URL:
         print("❌ Missing env vars. Please set BOT_TOKEN, ADMIN_CHAT_ID, BASE_URL")
         return
+
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
     print(f"✅ Webhook set to: {WEBHOOK_URL}")
+
 
 async def on_shutdown(bot: Bot):
     await bot.delete_webhook(drop_pending_updates=True)
@@ -186,7 +207,7 @@ def main():
     # Webhook handler
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
-    # Health check (Render bazen hoşlanır)
+    # Health check endpoint for uptime monitors
     async def health(_):
         return web.Response(text="OK")
     app.router.add_get("/", health)
@@ -197,8 +218,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
