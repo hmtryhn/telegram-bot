@@ -2,6 +2,8 @@ import os
 import re
 import asyncio
 from aiohttp import web
+import aiohttp
+
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -19,6 +21,8 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
 # Render servis URL'in (ör: https://senin-servisin.onrender.com)
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
+SHEETS_WEBAPP_URL = os.getenv("SHEETS_WEBAPP_URL", "").strip()
+
 
 # Güvenlik için webhook yolu (rastgele bir şey yap)
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_123")
@@ -68,6 +72,24 @@ def normalize_tg(value: str) -> str:
     if v.lower().startswith("t.me/"):
         v = "https://" + v
     return v
+    
+async def send_to_sheets(payload: dict):
+    if not SHEETS_WEBAPP_URL:
+        print("ℹ️ SHEETS_WEBAPP_URL not set; skipping Sheets logging.")
+        return
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(SHEETS_WEBAPP_URL, json=payload) as resp:
+                text = await resp.text()
+                # Debug için:
+                if resp.status != 200:
+                    print("❌ Sheets HTTP", resp.status, text)
+                else:
+                    print("✅ Sheets ok:", text[:200])
+    except Exception as e:
+        print("❌ Sheets error:", e)
 
 
 dp = Dispatcher()
@@ -119,6 +141,15 @@ async def receive_contact(message: Message, state: FSMContext):
         admin_text += f"🏷 start param: {start_param}\n"
 
     await message.bot.send_message(ADMIN_CHAT_ID, admin_text)
+    payload = {
+    "user_id": u.id,
+    "full_name": u.full_name,
+    "username": f"@{u.username}" if u.username else "",
+    "format": selected_title,
+    "tg_contact": tg,
+    "start_param": start_param
+}
+    await send_to_sheets(payload)
     await message.answer(TEXT_3)
     await state.clear()
 
@@ -161,5 +192,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
