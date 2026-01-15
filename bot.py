@@ -80,11 +80,10 @@ def normalize_tg(value: str) -> str:
 
 async def send_to_sheets(payload: dict) -> None:
     """
-    Sends a row payload to Google Apps Script Web App which appends row into Sheet.
-    This runs best as a background task (create_task) so user gets instant response.
+    Sends payload to Google Apps Script Web App (which appends a row into the sheet).
     """
     if not SHEETS_WEBAPP_URL:
-        # Keep silent (or log once if you want)
+        # If you forgot to set env var, we silently skip
         return
 
     try:
@@ -95,12 +94,24 @@ async def send_to_sheets(payload: dict) -> None:
                 json=payload,
                 allow_redirects=True
             ) as resp:
-                # Optional: log only if error
+                # Only log errors to keep logs clean
                 if resp.status != 200:
                     text = await resp.text()
                     print("❌ Sheets HTTP", resp.status, text[:300])
     except Exception as e:
-        print("❌ Sheets error:", e)
+        print("❌ Sheets error:", repr(e))
+
+
+def log_task_result(t: asyncio.Task):
+    """
+    Ensures background task errors are visible in Render logs.
+    """
+    try:
+        exc = t.exception()
+        if exc:
+            print("❌ Background task error:", repr(exc))
+    except asyncio.CancelledError:
+        pass
 
 
 dp = Dispatcher()
@@ -168,13 +179,16 @@ async def receive_contact(message: Message, state: FSMContext):
         "start_param": start_param,
     }
 
-    # ✅ User gets instant response (less perceived delay)
+    # ✅ Fast response to the user (less perceived delay)
     await message.answer(TEXT_3)
     await state.clear()
 
     # ✅ Send admin + sheets in background (non-blocking)
-    asyncio.create_task(message.bot.send_message(ADMIN_CHAT_ID, admin_text))
-    asyncio.create_task(send_to_sheets(payload))
+    t1 = asyncio.create_task(message.bot.send_message(ADMIN_CHAT_ID, admin_text))
+    t1.add_done_callback(log_task_result)
+
+    t2 = asyncio.create_task(send_to_sheets(payload))
+    t2.add_done_callback(log_task_result)
 
 
 @dp.message(Form.waiting_contact)
@@ -192,9 +206,9 @@ async def on_startup(bot: Bot):
 
 
 async def on_shutdown(bot: Bot):
-    
+    # IMPORTANT: Do NOT delete webhook on shutdown on platforms like Render.
+    # Otherwise restarts may break the bot temporarily.
     print("🛑 Shutdown (webhook kept)")
-
 
 
 def main():
@@ -208,7 +222,7 @@ def main():
     # Webhook handler
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
-    # Health check endpoint for uptime monitors
+    # Health check endpoint for uptime monitors (UptimeRobot)
     async def health(_):
         return web.Response(text="OK")
     app.router.add_get("/", health)
@@ -219,4 +233,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
