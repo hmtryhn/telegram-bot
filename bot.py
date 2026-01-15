@@ -192,8 +192,9 @@ async def on_startup(bot: Bot):
 
 
 async def on_shutdown(bot: Bot):
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("🛑 Webhook deleted")
+    
+    print("🛑 Shutdown (webhook kept)")
+
 
 
 def main():
@@ -218,3 +219,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
