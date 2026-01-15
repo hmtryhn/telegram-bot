@@ -141,6 +141,8 @@ async def receive_contact(message: Message, state: FSMContext):
     if start_param:
         admin_text += f"🏷 start param: {start_param}\n"
 
+    print("✅ receive_contact reached. Going to send admin + sheets")
+
     await message.bot.send_message(ADMIN_CHAT_ID, admin_text)
     payload = {
     "user_id": u.id,
@@ -150,6 +152,8 @@ async def receive_contact(message: Message, state: FSMContext):
     "tg_contact": tg,
     "start_param": start_param
 }
+    print("➡️ Calling send_to_sheets now...")
+    
     await send_to_sheets(payload)
     await message.answer(TEXT_3)
     await state.clear()
@@ -193,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
